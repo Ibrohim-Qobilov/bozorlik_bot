@@ -1,0 +1,16 @@
+# Maxfiy sozlamalar
+.env
+
+# Ma'lumotlar bazasi
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+bot.log
+
+# macOS
+.DS_Store

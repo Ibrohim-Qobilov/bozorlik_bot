@@ -1,0 +1,51 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Bozorlik bot logotipi: yashil fonda oq savat + bajarildi belgisi.
+       Telegram profil rasmi doira qilib kesadi — asosiy shakllar markazda. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3ddc97"/>
+      <stop offset="1" stop-color="#0b8f60"/>
+    </linearGradient>
+    <linearGradient id="badge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fcd34d"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.25" cy="0.18" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="drop" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="26" flood-color="#053b28" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <!-- Fon -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <circle cx="864" cy="150" r="220" fill="#ffffff" opacity="0.07"/>
+  <circle cx="140" cy="884" r="260" fill="#ffffff" opacity="0.06"/>
+
+  <!-- Yulduzchalar -->
+  <path d="M216 160 C222 182 228 188 250 194 C228 200 222 206 216 228 C210 206 204 200 182 194 C204 188 210 182 216 160 Z" fill="#ffffff" opacity="0.55"/>
+  <path d="M826 268 C830 283 834 287 849 291 C834 295 830 299 826 314 C822 299 818 295 803 291 C818 287 822 283 826 268 Z" fill="#ffffff" opacity="0.45"/>
+  <circle cx="714" cy="152" r="10" fill="#ffffff" opacity="0.4"/>
+
+  <!-- Savat -->
+  <g filter="url(#drop)" transform="translate(-8,-36)">
+    <path d="M364 448 A148 148 0 0 1 660 448" stroke="#ffffff" stroke-width="46" fill="none" stroke-linecap="round"/>
+    <rect x="240" y="420" width="544" height="66" rx="33" fill="#ffffff"/>
+    <path d="M286 486 L738 486 L706 750 Q700 804 646 804 L378 804 Q324 804 318 750 Z" fill="#ffffff"/>
+    <!-- Ro'yxat qatorlari: belgilangan + belgilanmagan -->
+    <rect x="368" y="552" width="66" height="66" rx="18" fill="#0b8f60"/>
+    <path d="M385 585 L399 600 L420 569" stroke="#ffffff" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="462" y="568" width="194" height="34" rx="17" fill="#0b8f60"/>
+    <rect x="374" y="666" width="54" height="54" rx="14" fill="none" stroke="#0b8f60" stroke-width="12"/>
+    <rect x="462" y="676" width="150" height="34" rx="17" fill="#0b8f60"/>
+  </g>
+
+  <!-- Bajarildi belgisi -->
+  <g filter="url(#drop)" transform="translate(-8,-36)">
+    <circle cx="726" cy="768" r="146" fill="url(#badge)"/>
+    <path d="M656 770 L706 820 L798 712" stroke="#ffffff" stroke-width="42" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
