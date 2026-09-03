@@ -110,29 +110,6 @@ def lang_kb():
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# Telegram inline tugma matnini har doim MARKAZGA tekislaydi, oxiridagi oddiy
-# bo'shliqni esa qirqib tashlaydi. Shu sabab qatorlar har xil uzunlikda bo'lsa,
-# kaltasi ko'proq ichkariga suriladi. Yechim: barcha tugmalarni bir xil enga
-# «ko'rinmas» belgilar bilan to'ldirsak, markazlash ularni chapdan bir tekis
-# boshlaydi. To'ldirgich — U+2800 BRAILLE PATTERN BLANK: qirqilmaydi, bo'sh
-# ko'rinadi. Proporsional shrift sabab ideal piksel emas, lekin qatorlar tekis.
-_PAD = "⠀"
-_LABEL_MAX = 60
-
-
-def _vis_width(s):
-    """Taxminiy ko'rinish eni: variatsiya selektori (⬜️ dagi U+FE0F) enga qo'shmaydi."""
-    return len(s.replace("️", ""))
-
-
-def _align_labels(labels):
-    """Tugmalarni eng uzunining eniga to'ldiradi — markazlash chapdan tekis boshlaydi."""
-    if not labels:
-        return labels
-    width = min(max(_vis_width(s) for s in labels), _LABEL_MAX)
-    return [s + _PAD * (width - _vis_width(s)) for s in labels]
-
-
 def _item_label(item, buyer=None):
     """Checkbox tugmasi matni: ⬜/✅ + nom + (×miqdor) + narx + (kim olgani)."""
     mark = "✅" if item["bought"] else "⬜️"
@@ -143,7 +120,7 @@ def _item_label(item, buyer=None):
         label += f" · {fmt_amount(item['price'])}"
     if buyer:
         label += f" · {buyer}"
-    return truncate(label, _LABEL_MAX)
+    return truncate(label, 60)
 
 
 def list_view_kb(lang, list_row, items, is_owner, buyers=None, group=False):
@@ -153,13 +130,12 @@ def list_view_kb(lang, list_row, items, is_owner, buyers=None, group=False):
     `group=True` — guruh chatidagi ixcham ko'rinish: faqat checkbox + yangilash.
     """
     buyers = buyers or {}
-    labels = _align_labels([
-        _item_label(i, buyers.get(i["bought_by"]) if i["bought"] else None)
-        for i in items
-    ])
     rows = [
-        [InlineKeyboardButton(text=label, callback_data=f"chk:{i['id']}")]
-        for i, label in zip(items, labels)
+        [InlineKeyboardButton(
+            text=_item_label(i, buyers.get(i["bought_by"]) if i["bought"] else None),
+            callback_data=f"chk:{i['id']}",
+        )]
+        for i in items
     ]
     if group:
         rows.append([InlineKeyboardButton(text=t(lang, "btn_refresh"), callback_data=f"lview:{list_row['id']}")])
