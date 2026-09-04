@@ -112,14 +112,26 @@ def parse_item_line(line):
     return name, None, qty
 
 
+_ITEM_DELIM = re.compile(r";|(?<!\d),|,(?!\d)")
+
+
 def parse_items(text):
-    """Xabar matnidan mahsulotlar ro'yxatini yig'adi (har qator — bitta)."""
+    """Xabar matnidan mahsulotlar ro'yxatini yig'adi.
+
+    Mahsulotlar yangi qatorda, vergul (,) yoki nuqta-vergul (;) bilan
+    ajratilgan bo'lishi mumkin (masalan: "non, nok 2000, uzum").
+    O'nlik sonlar ichidagi vergul (masalan: "1,5 kg olma") buzilmaydi.
+    """
     items = []
     for line in (text or "").splitlines():
-        parsed = parse_item_line(line)
-        if parsed:
-            name, price, qty = parsed
-            items.append((truncate(name, 64), price, qty))
+        for chunk in _ITEM_DELIM.split(line):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            parsed = parse_item_line(chunk)
+            if parsed:
+                name, price, qty = parsed
+                items.append((truncate(name, 64), price, qty))
     return items
 
 

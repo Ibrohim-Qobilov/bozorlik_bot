@@ -69,6 +69,21 @@ class TextTest(unittest.TestCase):
         items = parse_items("Non 5000\n\nSut 12000\nGuruch\n")
         self.assertEqual(items, [("Non", 5000, 1), ("Sut", 12000, 1), ("Guruch", None, 1)])
 
+    def test_parse_items_comma_and_semicolon(self):
+        # Vergul va nuqta-vergul bilan ajratilgan mahsulotlar
+        text = "non, nok 2000, uzum"
+        self.assertEqual(
+            parse_items(text),
+            [("non", None, 1), ("nok", 2000, 1), ("uzum", None, 1)],
+        )
+
+        # O'nlik sonlardagi vergul (1,5 kg olma) buzilmasligi kerak
+        text2 = "1,5 kg olma, 2 ta non 6000; banan"
+        self.assertEqual(
+            parse_items(text2),
+            [("1,5 kg olma", None, 1), ("2 ta non", 6000, 1), ("banan", None, 1)],
+        )
+
     def test_truncate(self):
         self.assertEqual(truncate("qisqa", 10), "qisqa")
         self.assertEqual(truncate("a" * 20, 10), "a" * 9 + "…")
