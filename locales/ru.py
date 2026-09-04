@@ -9,6 +9,7 @@ TEXTS = {
     "menu_hint": "Пользуйтесь меню ниже 👇",
     "settings_menu": "⚙️ Настройки\n\nВыберите раздел 👇",
     "set_lang_btn": "🌐 Язык",
+    "feedback_btn": "💬 Отзывы и предложения",
     "set_export_btn": "💾 Резервная копия",
     "set_import_btn": "📥 Восстановить",
     "set_tz_btn": "🕔 Часовой пояс",

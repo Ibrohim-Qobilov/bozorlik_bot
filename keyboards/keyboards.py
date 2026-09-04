@@ -24,7 +24,7 @@ def main_menu(lang):
 
 
 def settings_kb(lang):
-    """Sozlamalar menyusi: til, vaqt mintaqasi, hisobot, eslatmalar, zaxira."""
+    """Sozlamalar menyusi: til, vaqt mintaqasi, hisobot, eslatmalar, zaxira, murojaat."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text=t(lang, "set_lang_btn"), callback_data="set:lang"),
@@ -37,6 +37,9 @@ def settings_kb(lang):
         [
             InlineKeyboardButton(text=t(lang, "set_export_btn"), callback_data="set:export"),
             InlineKeyboardButton(text=t(lang, "set_import_btn"), callback_data="set:import"),
+        ],
+        [
+            InlineKeyboardButton(text=t(lang, "feedback_btn"), url="https://t.me/Ibrohim_qobilov_aloqabot"),
         ],
     ])
 

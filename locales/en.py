@@ -9,6 +9,7 @@ TEXTS = {
     "menu_hint": "Use the menu below 👇",
     "settings_menu": "⚙️ Settings\n\nChoose a section 👇",
     "set_lang_btn": "🌐 Language",
+    "feedback_btn": "💬 Feedback & Suggestions",
     "set_export_btn": "💾 Backup",
     "set_import_btn": "📥 Restore",
     "set_tz_btn": "🕔 Time zone",

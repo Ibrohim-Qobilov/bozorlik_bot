@@ -9,6 +9,7 @@ TEXTS = {
     "menu_hint": "Aşağıdaki menüyü kullanın 👇",
     "settings_menu": "⚙️ Ayarlar\n\nBir bölüm seçin 👇",
     "set_lang_btn": "🌐 Dil",
+    "feedback_btn": "💬 Geri bildirim ve Öneri",
     "set_export_btn": "💾 Yedek",
     "set_import_btn": "📥 Geri yükle",
     "set_tz_btn": "🕔 Saat dilimi",

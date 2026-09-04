@@ -9,6 +9,7 @@ TEXTS = {
     "menu_hint": "Quyidagi menyudan foydalaning 👇",
     "settings_menu": "⚙️ Sozlamalar\n\nKerakli bo'limni tanlang 👇",
     "set_lang_btn": "🌐 Til",
+    "feedback_btn": "💬 Taklif va murojaat",
     "set_export_btn": "💾 Zaxira",
     "set_import_btn": "📥 Tiklash",
     "set_tz_btn": "🕔 Vaqt mintaqasi",
