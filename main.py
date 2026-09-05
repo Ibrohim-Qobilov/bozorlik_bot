@@ -116,10 +116,10 @@ async def keep_alive_loop():
 
 async def set_commands(bot):
     await bot.set_my_commands([
+        BotCommand(command="start", description="▶️ Boshlash"),
         BotCommand(command="new", description="🛒 Yangi ro'yxat"),
         BotCommand(command="lists", description="📋 Ro'yxatlarim"),
         BotCommand(command="list", description="👥 Guruhda ro'yxat"),
-        BotCommand(command="start", description="▶️ Boshlash"),
     ])
 
 
