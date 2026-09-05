@@ -94,12 +94,32 @@ async def start_health_server():
     return runner
 
 
+import aiohttp
+
+async def keep_alive_loop():
+    await asyncio.sleep(60)
+    urls = [
+        "https://bozorlik-bot.onrender.com/health",
+        "https://karta-bot-nndu.onrender.com/health",
+        "https://aloqa-bot-x0ho.onrender.com/health",
+    ]
+    async with aiohttp.ClientSession() as session:
+        while True:
+            for u in urls:
+                try:
+                    async with session.get(u, timeout=aiohttp.ClientTimeout(total=10)):
+                        pass
+                except Exception:
+                    pass
+            await asyncio.sleep(8 * 60)
+
+
 async def set_commands(bot):
     await bot.set_my_commands([
-        BotCommand(command="new", description="Yangi ro'yxat / New list"),
-        BotCommand(command="lists", description="Ro'yxatlarim / My lists"),
-        BotCommand(command="list", description="Guruhda ro'yxat / List in group"),
-        BotCommand(command="start", description="Boshlash / Start"),
+        BotCommand(command="new", description="🛒 Yangi ro'yxat"),
+        BotCommand(command="lists", description="📋 Ro'yxatlarim"),
+        BotCommand(command="list", description="👥 Guruhda ro'yxat"),
+        BotCommand(command="start", description="▶️ Boshlash"),
     ])
 
 
@@ -123,12 +143,14 @@ async def main():
         web_runner = await start_health_server()
 
     reminder_task = asyncio.create_task(reminder_loop(bot))
+    keep_alive_task = asyncio.create_task(keep_alive_loop())
 
     logger.info("Bot ishga tushdi ✅")
     try:
         await dp.start_polling(bot)
     finally:
         reminder_task.cancel()
+        keep_alive_task.cancel()
         if web_runner:
             await web_runner.cleanup()
 
