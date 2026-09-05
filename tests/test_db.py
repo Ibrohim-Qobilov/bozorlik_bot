@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["BOT_TOKEN"] = "test:token"
 _TMP_DB = os.path.join(tempfile.gettempdir(), "bozorlik_test.db")
 os.environ["DB_PATH"] = _TMP_DB
+os.environ["SUPABASE_DB_URL"] = ""
 
 import database as db  # noqa: E402
 

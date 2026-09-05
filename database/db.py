@@ -1,10 +1,133 @@
-"""SQLite bilan ishlash: foydalanuvchilar, ro'yxatlar, a'zolar, mahsulotlar."""
+"""SQLite va Supabase (PostgreSQL) bilan ishlash: foydalanuvchilar, ro'yxatlar, a'zolar, mahsulotlar."""
+import os
+import re
 import secrets
+from contextlib import asynccontextmanager
 
 import aiosqlite
+try:
+    import asyncpg
+except ImportError:
+    asyncpg = None
 
-from config import DB_PATH
+from config import DB_PATH, SUPABASE_DB_URL
 from utils.timezone import default_tz, sqlite_modifier
+
+_pg_pool = None
+
+
+def _is_supabase():
+    url = os.environ.get("SUPABASE_DB_URL", SUPABASE_DB_URL)
+    return bool(url and asyncpg)
+
+
+async def get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None and _is_supabase():
+        url = os.environ.get("SUPABASE_DB_URL", SUPABASE_DB_URL)
+        _pg_pool = await asyncpg.create_pool(
+            dsn=url,
+            min_size=1,
+            max_size=10,
+            timeout=10,
+            command_timeout=10,
+        )
+    return _pg_pool
+
+
+def _to_pg(sql: str) -> str:
+    # Handle INSERT OR IGNORE for bozorlik_members
+    if re.search(r"\bINSERT\s+OR\s+IGNORE\s+INTO\s+members\b", sql, re.IGNORECASE):
+        sql = re.sub(r"INSERT\s+OR\s+IGNORE\s+INTO", "INSERT INTO", sql, flags=re.IGNORECASE)
+        if "ON CONFLICT" not in sql:
+            sql += " ON CONFLICT (list_id, user_id) DO NOTHING"
+    elif re.search(r"INSERT\s+OR\s+IGNORE\s+INTO", sql, re.IGNORECASE):
+        sql = re.sub(r"INSERT\s+OR\s+IGNORE\s+INTO", "INSERT INTO", sql, flags=re.IGNORECASE)
+
+    # Table prefixes: users, lists, members, items, reminders
+    sql = re.sub(r"\b(users|lists|members|items|reminders)\b", r"bozorlik_\1", sql)
+
+    # Param placeholders ? -> $1, $2, ...
+    count = 0
+
+    def repl(m):
+        nonlocal count
+        count += 1
+        return f"${count}"
+
+    return re.sub(r"\?", repl, sql)
+
+
+class _CursorProxy:
+    def __init__(self, conn, sql, params):
+        self.conn = conn
+        self.sql = sql
+        self.params = params
+        self._rows = []
+        self._idx = 0
+        self.lastrowid = None
+        self._executed = False
+
+    async def _run(self):
+        if self._executed:
+            return self
+        self._executed = True
+        pg_sql = _to_pg(self.sql)
+
+        if re.match(r"^\s*INSERT\s+INTO", pg_sql, re.IGNORECASE) and "RETURNING" not in pg_sql:
+            if re.search(r"\b(bozorlik_lists|bozorlik_items|bozorlik_reminders)\b", pg_sql):
+                pg_sql += " RETURNING id"
+                row = await self.conn.fetchrow(pg_sql, *self.params)
+                self.lastrowid = row[0] if row else None
+                return self
+
+        if re.match(r"^\s*(SELECT|WITH)", pg_sql, re.IGNORECASE):
+            self._rows = await self.conn.fetch(pg_sql, *self.params)
+        else:
+            await self.conn.execute(pg_sql, *self.params)
+        return self
+
+    def __await__(self):
+        return self._run().__await__()
+
+    async def __aenter__(self):
+        await self._run()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    async def fetchone(self):
+        if self._idx < len(self._rows):
+            r = self._rows[self._idx]
+            self._idx += 1
+            return tuple(r) if r is not None else None
+        return None
+
+    async def fetchall(self):
+        return [tuple(r) for r in self._rows]
+
+
+class _DBProxy:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def execute(self, sql, params=()):
+        return _CursorProxy(self.conn, sql, params)
+
+    async def commit(self):
+        pass
+
+
+@asynccontextmanager
+async def _connect():
+    if _is_supabase():
+        pool = await get_pg_pool()
+        async with pool.acquire() as conn:
+            yield _DBProxy(conn)
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            yield db
 
 
 async def _ensure_column(db, table, column, coltype):
@@ -16,6 +139,9 @@ async def _ensure_column(db, table, column, coltype):
 
 
 async def init_db():
+    if _is_supabase():
+        await get_pg_pool()
+        return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -78,13 +204,13 @@ async def init_db():
 # ---------- til ----------
 
 async def user_exists(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute("SELECT 1 FROM users WHERE user_id = ?", (user_id,)) as cur:
             return await cur.fetchone() is not None
 
 
 async def set_lang(user_id, lang):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "INSERT INTO users (user_id, lang) VALUES (?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET lang = ?",
@@ -94,7 +220,7 @@ async def set_lang(user_id, lang):
 
 
 async def get_lang(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute("SELECT lang FROM users WHERE user_id = ?", (user_id,)) as cur:
             row = await cur.fetchone()
             return row[0] if row else "uz"
@@ -107,7 +233,7 @@ async def get_tz(user_id):
 
     O'zi tanlamagan bo'lsa — tili bo'yicha standart (uz -> +5, tr -> +3 ...).
     """
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             "SELECT lang, tz FROM users WHERE user_id = ?", (user_id,)
         ) as cur:
@@ -120,7 +246,7 @@ async def get_tz(user_id):
 
 async def set_tz(user_id, tz_min):
     """Foydalanuvchi vaqt mintaqasini o'rnatadi (daqiqada UTC siljish)."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "INSERT INTO users (user_id, tz) VALUES (?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET tz = ?",
@@ -131,7 +257,7 @@ async def set_tz(user_id, tz_min):
 
 async def set_user_name(user_id, name):
     """Foydalanuvchi ismini yangilaydi («kim oldi» ko'rinishi uchun)."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "INSERT INTO users (user_id, name) VALUES (?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET name = ?",
@@ -145,7 +271,7 @@ async def get_user_names(user_ids):
     if not user_ids:
         return {}
     marks = ",".join("?" * len(user_ids))
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             f"SELECT user_id, name FROM users WHERE user_id IN ({marks})", tuple(user_ids)
         ) as cur:
@@ -164,7 +290,7 @@ def _list_row(row):
 
 async def create_list(owner_id, name):
     """Yangi ro'yxat ochadi, egasini a'zo qilib qo'shadi. `id` qaytaradi."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         while True:
             code = secrets.token_urlsafe(6)
             async with db.execute("SELECT 1 FROM lists WHERE code = ?", (code,)) as cur:
@@ -187,7 +313,7 @@ _LIST_COLS = "id, owner_id, name, code, done_notified, budget"
 
 
 async def get_list(list_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             f"SELECT {_LIST_COLS} FROM lists WHERE id = ?", (list_id,)
         ) as cur:
@@ -196,7 +322,7 @@ async def get_list(list_id):
 
 
 async def get_list_by_code(code):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             f"SELECT {_LIST_COLS} FROM lists WHERE code = ?", (code,)
         ) as cur:
@@ -206,7 +332,7 @@ async def get_list_by_code(code):
 
 async def get_user_lists(user_id):
     """Foydalanuvchi a'zo bo'lgan ro'yxatlar + olingan/jami sanoq va summa."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             """
             SELECT l.id, l.name,
@@ -229,13 +355,13 @@ async def get_user_lists(user_id):
 
 
 async def update_list_name(list_id, name):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute("UPDATE lists SET name = ? WHERE id = ?", (name, list_id))
         await db.commit()
 
 
 async def delete_list(list_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute("DELETE FROM items WHERE list_id = ?", (list_id,))
         await db.execute("DELETE FROM members WHERE list_id = ?", (list_id,))
         await db.execute("DELETE FROM lists WHERE id = ?", (list_id,))
@@ -243,7 +369,7 @@ async def delete_list(list_id):
 
 
 async def set_done_notified(list_id, flag):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "UPDATE lists SET done_notified = ? WHERE id = ?", (1 if flag else 0, list_id)
         )
@@ -252,7 +378,7 @@ async def set_done_notified(list_id, flag):
 
 async def set_budget(list_id, amount):
     """Ro'yxat byudjetini o'rnatadi (None — o'chiradi)."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute("UPDATE lists SET budget = ? WHERE id = ?", (amount, list_id))
         await db.commit()
 
@@ -260,7 +386,7 @@ async def set_budget(list_id, amount):
 # ---------- a'zolar ----------
 
 async def add_member(list_id, user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "INSERT OR IGNORE INTO members (list_id, user_id) VALUES (?, ?)",
             (list_id, user_id),
@@ -269,7 +395,7 @@ async def add_member(list_id, user_id):
 
 
 async def is_member(list_id, user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             "SELECT 1 FROM members WHERE list_id = ? AND user_id = ?", (list_id, user_id)
         ) as cur:
@@ -277,7 +403,7 @@ async def is_member(list_id, user_id):
 
 
 async def get_members(list_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             "SELECT user_id FROM members WHERE list_id = ?", (list_id,)
         ) as cur:
@@ -286,7 +412,7 @@ async def get_members(list_id):
 
 
 async def count_members(list_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             "SELECT COUNT(*) FROM members WHERE list_id = ?", (list_id,)
         ) as cur:
@@ -295,7 +421,7 @@ async def count_members(list_id):
 
 
 async def remove_member(list_id, user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "DELETE FROM members WHERE list_id = ? AND user_id = ?", (list_id, user_id)
         )
@@ -316,7 +442,7 @@ _ITEM_COLS = "id, list_id, name, price, qty, bought, bought_by"
 
 
 async def add_item(list_id, name, price=None, qty=1):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         cur = await db.execute(
             "INSERT INTO items (list_id, name, price, qty) VALUES (?, ?, ?, ?)",
             (list_id, name, price, qty),
@@ -326,21 +452,21 @@ async def add_item(list_id, name, price=None, qty=1):
 
 
 async def update_item_name(item_id, name):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute("UPDATE items SET name = ? WHERE id = ?", (name, item_id))
         await db.commit()
 
 
 async def update_item_price(item_id, price):
     """Narxni yangilaydi (None — narxni olib tashlaydi)."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute("UPDATE items SET price = ? WHERE id = ?", (price, item_id))
         await db.commit()
 
 
 async def last_price(user_id, name):
     """Foydalanuvchi ro'yxatlaridagi shu nomdagi mahsulotning oxirgi narxi."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             """
             SELECT i.price FROM items i
@@ -368,7 +494,7 @@ async def duplicate_list(list_id, owner_id):
 
 
 async def count_items(list_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             "SELECT COUNT(*) FROM items WHERE list_id = ?", (list_id,)
         ) as cur:
@@ -377,7 +503,7 @@ async def count_items(list_id):
 
 
 async def get_items(list_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             f"SELECT {_ITEM_COLS} FROM items WHERE list_id = ? ORDER BY id", (list_id,)
         ) as cur:
@@ -386,7 +512,7 @@ async def get_items(list_id):
 
 
 async def get_item(item_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             f"SELECT {_ITEM_COLS} FROM items WHERE id = ?", (item_id,)
         ) as cur:
@@ -396,7 +522,7 @@ async def get_item(item_id):
 
 async def set_bought(item_id, user_id, price=None):
     """Mahsulotni «olindi» qiladi; narx berilsa, uni ham yozadi."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         if price is None:
             await db.execute(
                 "UPDATE items SET bought = 1, bought_by = ?, bought_at = datetime('now') "
@@ -413,7 +539,7 @@ async def set_bought(item_id, user_id, price=None):
 
 
 async def set_unbought(item_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "UPDATE items SET bought = 0, bought_by = NULL, bought_at = NULL WHERE id = ?",
             (item_id,),
@@ -422,7 +548,7 @@ async def set_unbought(item_id):
 
 
 async def delete_item(item_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute("DELETE FROM items WHERE id = ?", (item_id,))
         await db.commit()
 
@@ -432,7 +558,7 @@ async def member_spending(list_id):
 
     [(user_id, soni, summasi)] — eng ko'p sarflagan birinchi.
     """
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             """
             SELECT bought_by, COUNT(*), COALESCE(SUM(price), 0)
@@ -452,7 +578,7 @@ async def frequent_items(user_id, exclude_list_id, limit=8):
 
     Joriy ro'yxatda allaqachon bor nomlar chiqarilmaydi.
     """
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             """
             SELECT i.name, COUNT(*) AS c
@@ -480,7 +606,7 @@ async def month_stats(user_id, month, tz_min=0):
     siljish). Foydalanuvchi a'zo bo'lgan ro'yxatlardagi barcha xaridlar kiradi.
     """
     mod = sqlite_modifier(tz_min)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             """
             SELECT COUNT(*), COALESCE(SUM(i.price), 0)
@@ -533,7 +659,7 @@ async def monthly_totals(user_id, months=6, tz_min=0):
     Oy chegarasi foydalanuvchi vaqt mintaqasida (`tz_min` — UTC siljish).
     """
     mod = sqlite_modifier(tz_min)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             """
             SELECT strftime('%Y-%m', datetime(i.bought_at, ?)) AS ym,
@@ -555,7 +681,7 @@ async def monthly_totals(user_id, months=6, tz_min=0):
 
 async def add_reminder(list_id, user_id, at):
     """`at` — "YYYY-MM-DD HH:MM" (mahalliy vaqt). Eslatma `id` sini qaytaradi."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         cur = await db.execute(
             "INSERT INTO reminders (list_id, user_id, at) VALUES (?, ?, ?)",
             (list_id, user_id, at),
@@ -566,7 +692,7 @@ async def add_reminder(list_id, user_id, at):
 
 async def set_reminder_repeat(reminder_id, user_id, repeat):
     """Takrorni yoqadi/o'chiradi ('weekly' yoki None). Faqat egasi uchun."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "UPDATE reminders SET repeat = ? WHERE id = ? AND user_id = ?",
             (repeat, reminder_id, user_id),
@@ -575,7 +701,7 @@ async def set_reminder_repeat(reminder_id, user_id, repeat):
 
 
 async def get_reminder(reminder_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             "SELECT id, list_id, user_id, at, repeat, sent FROM reminders WHERE id = ?",
             (reminder_id,),
@@ -588,7 +714,7 @@ async def get_reminder(reminder_id):
 
 async def user_reminders(user_id):
     """Foydalanuvchining faol eslatmalari (ro'yxat nomi bilan)."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             """
             SELECT r.id, r.at, r.repeat, l.name
@@ -603,7 +729,7 @@ async def user_reminders(user_id):
 
 
 async def delete_reminder(reminder_id, user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "DELETE FROM reminders WHERE id = ? AND user_id = ?", (reminder_id, user_id)
         )
@@ -612,7 +738,7 @@ async def delete_reminder(reminder_id, user_id):
 
 async def due_reminders(now):
     """Vaqti kelgan, hali yuborilmagan eslatmalar."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         async with db.execute(
             "SELECT id, list_id, user_id, at, repeat FROM reminders "
             "WHERE sent = 0 AND at <= ?",
@@ -627,7 +753,7 @@ async def due_reminders(now):
 
 async def bump_reminder(reminder_id, new_at):
     """Takroriy eslatmani keyingi vaqtga suradi (sent=0 qoladi)."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute(
             "UPDATE reminders SET at = ? WHERE id = ?", (new_at, reminder_id)
         )
@@ -635,6 +761,6 @@ async def bump_reminder(reminder_id, new_at):
 
 
 async def mark_reminder_sent(reminder_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with _connect() as db:
         await db.execute("UPDATE reminders SET sent = 1 WHERE id = ?", (reminder_id,))
         await db.commit()

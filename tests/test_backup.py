@@ -18,6 +18,7 @@ sys.path.insert(0, _ROOT)
 # qilinishidan qat'i nazar, bitta vaqtinchalik baza ishlatiladi.
 os.environ["BOT_TOKEN"] = "test:token"
 os.environ["DB_PATH"] = os.path.join(tempfile.gettempdir(), "bozorlik_test.db")
+os.environ["SUPABASE_DB_URL"] = ""
 
 _spec = importlib.util.spec_from_file_location(
     "backup_module", os.path.join(_ROOT, "handlers", "backup.py")

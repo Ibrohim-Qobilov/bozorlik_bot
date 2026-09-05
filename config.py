@@ -18,6 +18,7 @@ def _required(name):
 
 BOT_TOKEN = _required("BOT_TOKEN")
 DB_PATH = os.getenv("DB_PATH", "bozorlik.db")
+SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "")
 
 # Bitta ro'yxatdagi mahsulotlar soni chegarasi
 # (Telegram inline klaviaturasi ~100 tugma ko'taradi — zaxira bilan 50)
