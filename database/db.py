@@ -342,7 +342,7 @@ async def get_user_lists(user_id):
             FROM lists l
             JOIN members m ON m.list_id = l.id AND m.user_id = ?
             LEFT JOIN items i ON i.list_id = l.id
-            GROUP BY l.id
+            GROUP BY l.id, l.name
             ORDER BY l.id DESC
             """,
             (user_id,),
@@ -581,7 +581,7 @@ async def frequent_items(user_id, exclude_list_id, limit=8):
     async with _connect() as db:
         async with db.execute(
             """
-            SELECT i.name, COUNT(*) AS c
+            SELECT MAX(i.name), COUNT(*) AS c
             FROM items i
             JOIN members m ON m.list_id = i.list_id AND m.user_id = ?
             WHERE LOWER(i.name) NOT IN (
